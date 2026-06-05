@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 
 type Message = {
@@ -8,26 +8,21 @@ type Message = {
   sender: string
   receiver: string
   content: string
-  play_target: number
-  play_count: number
+  play_target?: number
+  play_count?: number
 }
 
-const PX_PER_SECOND = 140
+const PX_PER_SECOND = 120
 
 export default function WallPage() {
   const [messages, setMessages] = useState<Message[]>([])
-  const textRef = useRef<HTMLDivElement>(null)
-  const durationRef = useRef(20)
-  const [animKey, setAnimKey] = useState(0) // 強制重啟動畫用
-  const messagesRef = useRef<Message[]>([])
+  const [text, setText] = useState('歡迎留下畢業祝福')
+  const [duration, setDuration] = useState(20)
 
-  // 同步 messages 到 ref，讓 timer callback 不會拿到 stale value
-  useEffect(() => {
-    messagesRef.current = messages
-  }, [messages])
+  const textRef = useRef<HTMLDivElement>(null)
+  const currentIdsRef = useRef<number[]>([])
 
   async function loadMessages() {
-    // 用 filter 在 JS 端過濾，避免 Supabase 無法比較兩欄位
     const { data, error } = await supabase
       .from('messages')
       .select('id, sender, receiver, content, play_target, play_count')
@@ -39,106 +34,123 @@ export default function WallPage() {
       return
     }
 
-    // 過濾 play_count < play_target（在 JS 端做欄位比較）
-    const filtered = (data || []).filter(
-      (msg) => (msg.play_count || 0) < (msg.play_target || 1)
-    )
+    const filtered = (data || []).filter((msg) => {
+      const target = msg.play_target || 1
+      const count = msg.play_count || 0
+      return count < target
+    })
 
     setMessages(filtered)
   }
 
-  const countOnePlay = useCallback(async () => {
-    const current = messagesRef.current
-    if (current.length === 0) return
+  async function countOnePlay(ids: number[]) {
+    if (ids.length === 0) return
 
-    for (const msg of current) {
-      const nextCount = (msg.play_count || 0) + 1
-      const isDone = nextCount >= (msg.play_target || 1)
+    for (const id of ids) {
+      const { data, error } = await supabase
+        .from('messages')
+        .select('play_target, play_count')
+        .eq('id', id)
+        .single()
+
+      if (error || !data) continue
+
+      const nextCount = (data.play_count || 0) + 1
+      const target = data.play_target || 1
 
       await supabase
         .from('messages')
         .update({
           play_count: nextCount,
-          status: isDone ? 'completed' : 'approved',
+          status: nextCount >= target ? 'completed' : 'approved',
         })
-        .eq('id', msg.id)
+        .eq('id', id)
     }
 
     loadMessages()
-  }, [])
+  }
 
-  // 初始載入 + 定時刷新
   useEffect(() => {
     loadMessages()
-    const refreshTimer = setInterval(loadMessages, 3000)
-    return () => clearInterval(refreshTimer)
+
+    const timer = setInterval(() => {
+      loadMessages()
+    }, 5000)
+
+    return () => clearInterval(timer)
   }, [])
 
-  // messages 變動時重算動畫時長，並強制重啟動畫
   useEffect(() => {
-    if (!textRef.current) return
+    if (messages.length === 0) {
+      setText('歡迎留下畢業祝福')
+      currentIdsRef.current = []
+      return
+    }
 
-    // 等 DOM 更新後再量寬度
-    requestAnimationFrame(() => {
-      if (!textRef.current) return
-      const width = textRef.current.scrollWidth / 2
-      const secs = Math.max(width / PX_PER_SECOND, 8)
-      durationRef.current = secs
-      setAnimKey((k) => k + 1) // 重啟動畫
-    })
+    const newText = messages
+      .map((msg) => `【${msg.sender} 想對 ${msg.receiver} 說】 ${msg.content}`)
+      .join('　　　✦　　　')
+
+    setText(newText)
+    currentIdsRef.current = messages.map((msg) => msg.id)
   }, [messages])
 
-  // 每跑完一圈計一次播放
   useEffect(() => {
-    if (messages.length === 0) return
+    const calculate = () => {
+      if (!textRef.current) return
 
-    const secs = durationRef.current
-    const playTimer = setTimeout(() => {
-      countOnePlay()
-    }, secs * 1000)
+      const textWidth = textRef.current.scrollWidth
+      const screenWidth = window.innerWidth
+      const distance = textWidth + screenWidth
+      const seconds = Math.max(distance / PX_PER_SECOND, 10)
 
-    return () => clearTimeout(playTimer)
-  }, [messages, countOnePlay])
+      setDuration(seconds)
+    }
 
-  const text =
-    messages.length > 0
-      ? messages
-          .map((msg) => `【${msg.sender} 想對 ${msg.receiver} 說】 ${msg.content}`)
-          .join('　　　✦　　　')
-      : '歡迎留下畢業祝福'
+    requestAnimationFrame(calculate)
+  }, [text])
 
-  const fullText = `${text}　　　✦　　　${text}`
+  useEffect(() => {
+    if (currentIdsRef.current.length === 0) return
+
+    const timer = setTimeout(() => {
+      countOnePlay(currentIdsRef.current)
+    }, duration * 1000)
+
+    return () => clearTimeout(timer)
+  }, [duration, text])
 
   return (
     <main
       style={{
         width: '100vw',
         height: '100vh',
-        backgroundColor: '#00ff00',
         overflow: 'hidden',
+        backgroundColor: '#00ff00',
         display: 'flex',
         alignItems: 'center',
       }}
     >
       <div
-        key={animKey}
         ref={textRef}
         style={{
-          display: 'inline-block',
           whiteSpace: 'nowrap',
           fontSize: '60px',
           fontWeight: 900,
           color: '#ffffff',
-          textShadow: '0 0 10px rgba(0,0,0,.8), 0 0 20px rgba(0,0,0,.8)',
-          animation: `marquee ${durationRef.current}s linear infinite`,
+          textShadow:
+            '0 0 10px rgba(0,0,0,.9), 0 0 20px rgba(0,0,0,.9)',
+          animation: `marquee ${duration}s linear infinite`,
           willChange: 'transform',
+          paddingLeft: '100vw',
         }}
       >
-        {fullText}
+        {text}
       </div>
 
       <style jsx global>{`
-        html, body {
+        html,
+        body {
           margin: 0;
           padding: 0;
           overflow: hidden;
@@ -146,8 +158,13 @@ export default function WallPage() {
         }
 
         @keyframes marquee {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
+          0% {
+            transform: translateX(0);
+          }
+
+          100% {
+            transform: translateX(calc(-100% - 100vw));
+          }
         }
       `}</style>
     </main>

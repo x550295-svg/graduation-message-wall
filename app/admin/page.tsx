@@ -29,16 +29,11 @@ export default function AdminPage() {
       return
     }
 
-    const { data: settingData, error: settingError } = await supabase
+    const { data: settingData } = await supabase
       .from('settings')
       .select('display_count')
       .eq('id', 1)
       .single()
-
-    if (settingError) {
-      alert(JSON.stringify(settingError))
-      return
-    }
 
     setMessages(messageData || [])
     setDisplayCount(settingData?.display_count || 3)
@@ -94,6 +89,25 @@ export default function AdminPage() {
     loadData()
   }
 
+  async function stopMessage(id: number) {
+    const ok = confirm('確定要停止這則留言播放嗎？')
+    if (!ok) return
+
+    const { error } = await supabase
+      .from('messages')
+      .update({
+        status: 'rejected',
+      })
+      .eq('id', id)
+
+    if (error) {
+      alert(JSON.stringify(error))
+      return
+    }
+
+    loadData()
+  }
+
   async function replayMessage(id: number) {
     const { error } = await supabase
       .from('messages')
@@ -111,19 +125,38 @@ export default function AdminPage() {
     loadData()
   }
 
+  async function backToPending(id: number) {
+    const { error } = await supabase
+      .from('messages')
+      .update({
+        status: 'pending',
+        play_count: 0,
+      })
+      .eq('id', id)
+
+    if (error) {
+      alert(JSON.stringify(error))
+      return
+    }
+
+    loadData()
+  }
+
   useEffect(() => {
     loadData()
 
-    const timer = setInterval(loadData, 3000)
+    const timer = setInterval(loadData, 2000)
     return () => clearInterval(timer)
   }, [])
 
   const pending = messages.filter((m) => m.status === 'pending')
+
   const playing = messages.filter(
     (m) =>
       m.status === 'approved' &&
       (m.play_count || 0) < (m.play_target || 0)
   )
+
   const completed = messages.filter(
     (m) =>
       m.status === 'completed' ||
@@ -131,6 +164,7 @@ export default function AdminPage() {
         (m.play_target || 0) > 0 &&
         (m.play_count || 0) >= (m.play_target || 0))
   )
+
   const rejected = messages.filter((m) => m.status === 'rejected')
 
   function MessageCard({
@@ -140,6 +174,11 @@ export default function AdminPage() {
     msg: Message
     mode: 'pending' | 'playing' | 'completed' | 'rejected'
   }) {
+    const target = msg.play_target || 0
+    const count = msg.play_count || 0
+    const percent =
+      target > 0 ? Math.min(Math.round((count / target) * 100), 100) : 0
+
     return (
       <div className="rounded-[28px] border border-white/15 bg-white/10 p-6">
         <p className="mb-4 text-2xl font-black leading-relaxed">
@@ -147,16 +186,25 @@ export default function AdminPage() {
         </p>
 
         {mode !== 'pending' && (
-          <div className="mb-5 text-lg text-cyan-200">
-            已播放：
-            <span className="font-black text-white">
-              {msg.play_count || 0}
-            </span>
-            {' / '}
-            目標：
-            <span className="font-black text-white">
-              {msg.play_target || 0}
-            </span>
+          <div className="mb-5">
+            <div className="mb-2 flex items-center justify-between text-lg">
+              <p className="text-cyan-200">
+                已播放：
+                <span className="mx-1 font-black text-white">{count}</span>
+                /
+                <span className="mx-1 font-black text-white">{target}</span>
+                次
+              </p>
+
+              <p className="font-black text-white">{percent}%</p>
+            </div>
+
+            <div className="h-4 overflow-hidden rounded-full bg-black/40">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-cyan-400 to-fuchsia-500 transition-all"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
           </div>
         )}
 
@@ -178,12 +226,30 @@ export default function AdminPage() {
           </div>
         )}
 
+        {mode === 'playing' && (
+          <button
+            onClick={() => stopMessage(msg.id)}
+            className="rounded-2xl bg-red-600 px-8 py-4 text-xl font-black text-white hover:bg-red-500"
+          >
+            ⛔ 立即停止播放
+          </button>
+        )}
+
         {mode === 'completed' && (
           <button
             onClick={() => replayMessage(msg.id)}
             className="rounded-2xl bg-cyan-400 px-8 py-4 text-xl font-black text-slate-950 hover:bg-cyan-300"
           >
             🔁 重新播放
+          </button>
+        )}
+
+        {mode === 'rejected' && (
+          <button
+            onClick={() => backToPending(msg.id)}
+            className="rounded-2xl bg-yellow-400 px-8 py-4 text-xl font-black text-slate-950 hover:bg-yellow-300"
+          >
+            ↩ 重新審核
           </button>
         )}
       </div>
@@ -303,7 +369,7 @@ export default function AdminPage() {
 
         <section>
           <h2 className="mb-5 text-3xl font-black text-red-300">
-            已拒絕
+            已拒絕 / 已停止
           </h2>
 
           <div className="grid gap-6">
