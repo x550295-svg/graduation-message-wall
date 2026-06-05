@@ -8,59 +8,83 @@ type Message = {
   sender: string
   receiver: string
   content: string
+  play_target: number
+  play_count: number
 }
 
 const PX_PER_SECOND = 140
 
 export default function WallPage() {
   const [messages, setMessages] = useState<Message[]>([])
-  const [displayCount, setDisplayCount] = useState(1)
-
   const textRef = useRef<HTMLDivElement>(null)
   const [duration, setDuration] = useState(20)
 
-  async function loadData() {
-    const { data: messageData } = await supabase
+  async function loadMessages() {
+    const { data, error } = await supabase
       .from('messages')
-      .select('id, sender, receiver, content')
+      .select('id, sender, receiver, content, play_target, play_count')
       .eq('status', 'approved')
+      .lt('play_count', 'play_target')
       .order('created_at', { ascending: true })
 
-    const { data: settingData } = await supabase
-      .from('settings')
-      .select('display_count')
-      .eq('id', 1)
-      .single()
+    if (error) {
+      console.error(error)
+      return
+    }
 
-    setMessages(messageData || [])
-    setDisplayCount(settingData?.display_count || 1)
+    setMessages(data || [])
+  }
+
+  async function countOnePlay() {
+    if (messages.length === 0) return
+
+    for (const msg of messages) {
+      const nextCount = (msg.play_count || 0) + 1
+      const isDone = nextCount >= (msg.play_target || 0)
+
+      await supabase
+        .from('messages')
+        .update({
+          play_count: nextCount,
+          status: isDone ? 'completed' : 'approved',
+        })
+        .eq('id', msg.id)
+    }
+
+    loadMessages()
   }
 
   useEffect(() => {
-    loadData()
+    loadMessages()
 
-    const timer = setInterval(() => {
-      loadData()
+    const refreshTimer = setInterval(() => {
+      loadMessages()
     }, 3000)
 
-    return () => clearInterval(timer)
+    return () => clearInterval(refreshTimer)
   }, [])
 
   useEffect(() => {
     if (textRef.current) {
       const width = textRef.current.scrollWidth / 2
-      const secs = Math.max(width / PX_PER_SECOND, 5)
+      const secs = Math.max(width / PX_PER_SECOND, 8)
       setDuration(secs)
     }
-  }, [messages, displayCount])
+  }, [messages])
 
-  const repeatedMessages = Array(displayCount)
-    .fill(messages)
-    .flat()
+  useEffect(() => {
+    if (messages.length === 0) return
+
+    const playTimer = setTimeout(() => {
+      countOnePlay()
+    }, duration * 1000)
+
+    return () => clearTimeout(playTimer)
+  }, [messages, duration])
 
   const text =
-    repeatedMessages.length > 0
-      ? repeatedMessages
+    messages.length > 0
+      ? messages
           .map(
             (msg) =>
               `【${msg.sender} 想對 ${msg.receiver} 說】 ${msg.content}`
@@ -86,18 +110,12 @@ export default function WallPage() {
         style={{
           display: 'inline-block',
           whiteSpace: 'nowrap',
-
           fontSize: '60px',
-
           fontWeight: 900,
-
           color: '#ffffff',
-
           textShadow:
             '0 0 10px rgba(0,0,0,.8), 0 0 20px rgba(0,0,0,.8)',
-
           animation: `marquee ${duration}s linear infinite`,
-
           willChange: 'transform',
         }}
       >
