@@ -8,21 +8,19 @@ type Message = {
   sender: string
   receiver: string
   content: string
-  play_target?: number
-  play_count?: number
+  play_target: number
+  play_count: number
 }
 
 const PX_PER_SECOND = 120
 
 export default function WallPage() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [text, setText] = useState('歡迎留下畢業祝福')
-  const [duration, setDuration] = useState(20)
-
+  const [currentMessage, setCurrentMessage] = useState<Message | null>(null)
+  const [duration, setDuration] = useState(12)
   const textRef = useRef<HTMLDivElement>(null)
-  const currentIdsRef = useRef<number[]>([])
+  const isCountingRef = useRef(false)
 
-  async function loadMessages() {
+  async function loadNextMessage() {
     const { data, error } = await supabase
       .from('messages')
       .select('id, sender, receiver, content, play_target, play_count')
@@ -34,91 +32,74 @@ export default function WallPage() {
       return
     }
 
-    const filtered = (data || []).filter((msg) => {
+    const activeMessages = (data || []).filter((msg) => {
       const target = msg.play_target || 1
       const count = msg.play_count || 0
       return count < target
     })
 
-    setMessages(filtered)
-  }
-
-  async function countOnePlay(ids: number[]) {
-    if (ids.length === 0) return
-
-    for (const id of ids) {
-      const { data, error } = await supabase
-        .from('messages')
-        .select('play_target, play_count')
-        .eq('id', id)
-        .single()
-
-      if (error || !data) continue
-
-      const nextCount = (data.play_count || 0) + 1
-      const target = data.play_target || 1
-
-      await supabase
-        .from('messages')
-        .update({
-          play_count: nextCount,
-          status: nextCount >= target ? 'completed' : 'approved',
-        })
-        .eq('id', id)
-    }
-
-    loadMessages()
-  }
-
-  useEffect(() => {
-    loadMessages()
-
-    const timer = setInterval(() => {
-      loadMessages()
-    }, 5000)
-
-    return () => clearInterval(timer)
-  }, [])
-
-  useEffect(() => {
-    if (messages.length === 0) {
-      setText('歡迎留下畢業祝福')
-      currentIdsRef.current = []
+    if (activeMessages.length === 0) {
+      setCurrentMessage(null)
       return
     }
 
-    const newText = messages
-      .map((msg) => `【${msg.sender} 想對 ${msg.receiver} 說】 ${msg.content}`)
-      .join('　　　✦　　　')
+    setCurrentMessage(activeMessages[0])
+  }
 
-    setText(newText)
-    currentIdsRef.current = messages.map((msg) => msg.id)
-  }, [messages])
+  async function finishOnePlay() {
+    if (!currentMessage) return
+    if (isCountingRef.current) return
 
-  useEffect(() => {
-    const calculate = () => {
-      if (!textRef.current) return
+    isCountingRef.current = true
 
-      const textWidth = textRef.current.scrollWidth
-      const screenWidth = window.innerWidth
-      const distance = textWidth + screenWidth
-      const seconds = Math.max(distance / PX_PER_SECOND, 10)
+    const nextCount = (currentMessage.play_count || 0) + 1
+    const target = currentMessage.play_target || 1
+    const isDone = nextCount >= target
 
-      setDuration(seconds)
+    const { error } = await supabase
+      .from('messages')
+      .update({
+        play_count: nextCount,
+        status: isDone ? 'completed' : 'approved',
+      })
+      .eq('id', currentMessage.id)
+
+    if (error) {
+      console.error(error)
     }
 
-    requestAnimationFrame(calculate)
-  }, [text])
+    setTimeout(async () => {
+      isCountingRef.current = false
+      await loadNextMessage()
+    }, 300)
+  }
 
   useEffect(() => {
-    if (currentIdsRef.current.length === 0) return
+    loadNextMessage()
 
-    const timer = setTimeout(() => {
-      countOnePlay(currentIdsRef.current)
-    }, duration * 1000)
+    const timer = setInterval(() => {
+      if (!currentMessage) {
+        loadNextMessage()
+      }
+    }, 3000)
 
-    return () => clearTimeout(timer)
-  }, [duration, text])
+    return () => clearInterval(timer)
+  }, [currentMessage])
+
+  const text = currentMessage
+    ? `【${currentMessage.sender} 想對 ${currentMessage.receiver} 說】 ${currentMessage.content}`
+    : ''
+
+  useEffect(() => {
+    if (!textRef.current || !text) return
+
+    const textWidth = textRef.current.scrollWidth
+    const screenWidth = window.innerWidth
+    const distance = textWidth + screenWidth
+    const secs = Math.max(distance / PX_PER_SECOND, 8)
+
+    setDuration(secs)
+  }, [text])
 
   return (
     <main
@@ -131,22 +112,25 @@ export default function WallPage() {
         alignItems: 'center',
       }}
     >
-      <div
-        ref={textRef}
-        style={{
-          whiteSpace: 'nowrap',
-          fontSize: '60px',
-          fontWeight: 900,
-          color: '#ffffff',
-          textShadow:
-            '0 0 10px rgba(0,0,0,.9), 0 0 20px rgba(0,0,0,.9)',
-          animation: `marquee ${duration}s linear infinite`,
-          willChange: 'transform',
-          paddingLeft: '100vw',
-        }}
-      >
-        {text}
-      </div>
+      {text && (
+        <div
+          key={currentMessage?.id + '-' + currentMessage?.play_count}
+          ref={textRef}
+          onAnimationEnd={finishOnePlay}
+          style={{
+            whiteSpace: 'nowrap',
+            fontSize: '60px',
+            fontWeight: 900,
+            color: '#ffffff',
+            textShadow:
+              '0 0 10px rgba(0,0,0,.9), 0 0 20px rgba(0,0,0,.9)',
+            animation: `marquee ${duration}s linear forwards`,
+            willChange: 'transform',
+          }}
+        >
+          {text}
+        </div>
+      )}
 
       <style jsx global>{`
         html,
@@ -159,11 +143,11 @@ export default function WallPage() {
 
         @keyframes marquee {
           0% {
-            transform: translateX(0);
+            transform: translateX(100vw);
           }
 
           100% {
-            transform: translateX(calc(-100% - 100vw));
+            transform: translateX(-100%);
           }
         }
       `}</style>
