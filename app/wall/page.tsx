@@ -10,11 +10,12 @@ type Message = {
   content: string
 }
 
-const PX_PER_SECOND = 120 // 調整這個數字控制跑馬燈速度
+const PX_PER_SECOND = 140
 
 export default function WallPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [displayCount, setDisplayCount] = useState(1)
+
   const textRef = useRef<HTMLDivElement>(null)
   const [duration, setDuration] = useState(20)
 
@@ -37,38 +38,45 @@ export default function WallPage() {
 
   useEffect(() => {
     loadData()
-    const timer = setInterval(loadData, 3000)
+
+    const timer = setInterval(() => {
+      loadData()
+    }, 3000)
+
     return () => clearInterval(timer)
   }, [])
 
-  // 文字或訊息數量變動時，重新計算動畫時長
   useEffect(() => {
     if (textRef.current) {
-      const width = textRef.current.scrollWidth / 2 // 只算一份的寬度
+      const width = textRef.current.scrollWidth / 2
       const secs = Math.max(width / PX_PER_SECOND, 5)
       setDuration(secs)
     }
   }, [messages, displayCount])
 
-  const repeatedMessages = Array(displayCount).fill(messages).flat()
+  const repeatedMessages = Array(displayCount)
+    .fill(messages)
+    .flat()
 
   const text =
     repeatedMessages.length > 0
       ? repeatedMessages
-          .map((msg) => `${msg.sender} 想對 ${msg.receiver} 說：${msg.content}`)
-          .join('　　｜　　')
-      : '等待留言中…'
+          .map(
+            (msg) =>
+              `【${msg.sender} 想對 ${msg.receiver} 說】 ${msg.content}`
+          )
+          .join('　　　✦　　　')
+      : '歡迎留下畢業祝福'
 
-  // 首尾相接：兩份相同文字，讓第一份跑完時第二份剛好接上
-  const fullText = `${text}　　｜　　${text}　　｜　　`
+  const fullText = `${text}　　　✦　　　${text}`
 
   return (
     <main
       style={{
         width: '100vw',
         height: '100vh',
+        backgroundColor: '#00ff00',
         overflow: 'hidden',
-        backgroundColor: '#070022',
         display: 'flex',
         alignItems: 'center',
       }}
@@ -78,11 +86,18 @@ export default function WallPage() {
         style={{
           display: 'inline-block',
           whiteSpace: 'nowrap',
-          fontSize: '96px',
+
+          fontSize: '60px',
+
           fontWeight: 900,
+
           color: '#ffffff',
-          // 動畫：移動距離是「一份文字寬度 + 分隔符」= 50% of 兩份
+
+          textShadow:
+            '0 0 10px rgba(0,0,0,.8), 0 0 20px rgba(0,0,0,.8)',
+
           animation: `marquee ${duration}s linear infinite`,
+
           willChange: 'transform',
         }}
       >
@@ -90,19 +105,24 @@ export default function WallPage() {
       </div>
 
       <style jsx global>{`
-        html, body {
+        html,
+        body {
           margin: 0;
           padding: 0;
           overflow: hidden;
-          background: #070022;
+          background: #00ff00;
         }
 
         @keyframes marquee {
-          0%   { transform: translateX(0); }
-          100% { transform: translateX(-50%); }
+          0% {
+            transform: translateX(0);
+          }
+
+          100% {
+            transform: translateX(-50%);
+          }
         }
       `}</style>
     </main>
   )
 }
-
