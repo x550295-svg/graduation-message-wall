@@ -14,9 +14,12 @@ type Message = {
   created_at: string
 }
 
+type Tab = 'home' | 'pending' | 'playing' | 'completed' | 'rejected'
+
 export default function AdminPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [displayCount, setDisplayCount] = useState(3)
+  const [activeTab, setActiveTab] = useState<Tab>('home')
 
   async function loadData() {
     const { data: messageData, error: messageError } = await supabase
@@ -76,9 +79,7 @@ export default function AdminPage() {
   async function rejectMessage(id: number) {
     const { error } = await supabase
       .from('messages')
-      .update({
-        status: 'rejected',
-      })
+      .update({ status: 'rejected' })
       .eq('id', id)
 
     if (error) {
@@ -95,9 +96,7 @@ export default function AdminPage() {
 
     const { error } = await supabase
       .from('messages')
-      .update({
-        status: 'rejected',
-      })
+      .update({ status: 'rejected' })
       .eq('id', id)
 
     if (error) {
@@ -144,7 +143,6 @@ export default function AdminPage() {
 
   useEffect(() => {
     loadData()
-
     const timer = setInterval(loadData, 2000)
     return () => clearInterval(timer)
   }, [])
@@ -166,6 +164,36 @@ export default function AdminPage() {
   )
 
   const rejected = messages.filter((m) => m.status === 'rejected')
+
+  function TabButton({
+    tab,
+    label,
+    count,
+  }: {
+    tab: Tab
+    label: string
+    count?: number
+  }) {
+    const active = activeTab === tab
+
+    return (
+      <button
+        onClick={() => setActiveTab(tab)}
+        className={`rounded-2xl px-6 py-4 text-lg font-black transition ${
+          active
+            ? 'bg-cyan-400 text-slate-950'
+            : 'bg-white/10 text-white hover:bg-white/20'
+        }`}
+      >
+        {label}
+        {typeof count === 'number' && (
+          <span className="ml-2 rounded-full bg-black/30 px-3 py-1 text-sm">
+            {count}
+          </span>
+        )}
+      </button>
+    )
+  }
 
   function MessageCard({
     msg,
@@ -256,6 +284,36 @@ export default function AdminPage() {
     )
   }
 
+  function MessageList({
+    title,
+    emptyText,
+    data,
+    mode,
+  }: {
+    title: string
+    emptyText: string
+    data: Message[]
+    mode: 'pending' | 'playing' | 'completed' | 'rejected'
+  }) {
+    return (
+      <section>
+        <h2 className="mb-6 text-4xl font-black">{title}</h2>
+
+        <div className="grid gap-6">
+          {data.length === 0 ? (
+            <div className="rounded-3xl bg-white/10 p-8 text-white/50">
+              {emptyText}
+            </div>
+          ) : (
+            data.map((msg) => (
+              <MessageCard key={msg.id} msg={msg} mode={mode} />
+            ))
+          )}
+        </div>
+      </section>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 p-8 text-white">
       <div className="mx-auto max-w-7xl">
@@ -268,120 +326,148 @@ export default function AdminPage() {
         </h1>
 
         <p className="mb-8 text-white/60">
-          通過時會鎖定當下播放次數，不會被之後設定影響
+          分頁式管理，避免留言太多時一直往下滑
         </p>
 
-        <section className="mb-10 grid grid-cols-4 gap-5">
-          <div className="rounded-3xl bg-white/10 p-6">
-            <p className="text-white/50">總留言</p>
-            <p className="text-4xl font-black">{messages.length}</p>
-          </div>
+        <nav className="sticky top-0 z-20 mb-8 flex flex-wrap gap-3 bg-slate-950/95 py-4 backdrop-blur">
+          <TabButton tab="home" label="總頁" />
+          <TabButton tab="pending" label="新留言" count={pending.length} />
+          <TabButton tab="playing" label="正在跑" count={playing.length} />
+          <TabButton tab="completed" label="跑完" count={completed.length} />
+          <TabButton tab="rejected" label="拒絕/停止" count={rejected.length} />
+        </nav>
 
-          <div className="rounded-3xl bg-yellow-500/20 p-6">
-            <p className="text-yellow-200">待審核</p>
-            <p className="text-4xl font-black">{pending.length}</p>
-          </div>
+        {activeTab === 'home' && (
+          <>
+            <section className="mb-10 grid grid-cols-4 gap-5">
+              <button
+                onClick={() => setActiveTab('pending')}
+                className="rounded-3xl bg-yellow-500/20 p-6 text-left hover:bg-yellow-500/30"
+              >
+                <p className="text-yellow-200">新留言</p>
+                <p className="text-5xl font-black">{pending.length}</p>
+              </button>
 
-          <div className="rounded-3xl bg-cyan-500/20 p-6">
-            <p className="text-cyan-200">播放中</p>
-            <p className="text-4xl font-black">{playing.length}</p>
-          </div>
+              <button
+                onClick={() => setActiveTab('playing')}
+                className="rounded-3xl bg-cyan-500/20 p-6 text-left hover:bg-cyan-500/30"
+              >
+                <p className="text-cyan-200">正在跑</p>
+                <p className="text-5xl font-black">{playing.length}</p>
+              </button>
 
-          <div className="rounded-3xl bg-green-500/20 p-6">
-            <p className="text-green-200">已完成</p>
-            <p className="text-4xl font-black">{completed.length}</p>
-          </div>
-        </section>
+              <button
+                onClick={() => setActiveTab('completed')}
+                className="rounded-3xl bg-green-500/20 p-6 text-left hover:bg-green-500/30"
+              >
+                <p className="text-green-200">跑完</p>
+                <p className="text-5xl font-black">{completed.length}</p>
+              </button>
 
-        <section className="mb-10 rounded-[32px] border border-cyan-300/30 bg-white/10 p-8">
-          <p className="mb-4 text-xl font-bold text-cyan-200">
-            新通過留言預設播放次數
-          </p>
+              <button
+                onClick={() => setActiveTab('rejected')}
+                className="rounded-3xl bg-red-500/20 p-6 text-left hover:bg-red-500/30"
+              >
+                <p className="text-red-200">拒絕 / 停止</p>
+                <p className="text-5xl font-black">{rejected.length}</p>
+              </button>
+            </section>
 
-          <div className="flex items-center gap-6">
-            <button
-              onClick={() => updateDisplayCount(displayCount - 1)}
-              className="rounded-2xl bg-white/20 px-8 py-4 text-4xl font-black hover:bg-white/30"
-            >
-              -
-            </button>
+            <section className="rounded-[32px] border border-cyan-300/30 bg-white/10 p-8">
+              <p className="mb-4 text-xl font-bold text-cyan-200">
+                新通過留言預設播放次數
+              </p>
 
-            <div className="w-24 text-center text-6xl font-black">
-              {displayCount}
-            </div>
+              <div className="flex items-center gap-6">
+                <button
+                  onClick={() => updateDisplayCount(displayCount - 1)}
+                  className="rounded-2xl bg-white/20 px-8 py-4 text-4xl font-black hover:bg-white/30"
+                >
+                  -
+                </button>
 
-            <button
-              onClick={() => updateDisplayCount(displayCount + 1)}
-              className="rounded-2xl bg-white/20 px-8 py-4 text-4xl font-black hover:bg-white/30"
-            >
-              +
-            </button>
-          </div>
-        </section>
+                <div className="w-24 text-center text-6xl font-black">
+                  {displayCount}
+                </div>
 
-        <section className="mb-12">
-          <h2 className="mb-5 text-3xl font-black text-yellow-300">
-            待審核留言
-          </h2>
+                <button
+                  onClick={() => updateDisplayCount(displayCount + 1)}
+                  className="rounded-2xl bg-white/20 px-8 py-4 text-4xl font-black hover:bg-white/30"
+                >
+                  +
+                </button>
+              </div>
 
-          <div className="grid gap-6">
-            {pending.length === 0 ? (
-              <p className="text-white/50">目前沒有待審核留言</p>
-            ) : (
-              pending.map((msg) => (
-                <MessageCard key={msg.id} msg={msg} mode="pending" />
-              ))
-            )}
-          </div>
-        </section>
+              <p className="mt-4 text-white/50">
+                在「新留言」頁按通過時，會使用這裡當下的次數。
+              </p>
+            </section>
+          </>
+        )}
 
-        <section className="mb-12">
-          <h2 className="mb-5 text-3xl font-black text-cyan-300">
-            播放中留言
-          </h2>
+        {activeTab === 'pending' && (
+          <>
+            <section className="mb-8 rounded-[32px] border border-cyan-300/30 bg-white/10 p-8">
+              <p className="mb-4 text-xl font-bold text-cyan-200">
+                新通過留言預設播放次數
+              </p>
 
-          <div className="grid gap-6">
-            {playing.length === 0 ? (
-              <p className="text-white/50">目前沒有播放中的留言</p>
-            ) : (
-              playing.map((msg) => (
-                <MessageCard key={msg.id} msg={msg} mode="playing" />
-              ))
-            )}
-          </div>
-        </section>
+              <div className="flex items-center gap-6">
+                <button
+                  onClick={() => updateDisplayCount(displayCount - 1)}
+                  className="rounded-2xl bg-white/20 px-8 py-4 text-4xl font-black hover:bg-white/30"
+                >
+                  -
+                </button>
 
-        <section className="mb-12">
-          <h2 className="mb-5 text-3xl font-black text-green-300">
-            已播放完成
-          </h2>
+                <div className="w-24 text-center text-6xl font-black">
+                  {displayCount}
+                </div>
 
-          <div className="grid gap-6">
-            {completed.length === 0 ? (
-              <p className="text-white/50">目前沒有完成播放的留言</p>
-            ) : (
-              completed.map((msg) => (
-                <MessageCard key={msg.id} msg={msg} mode="completed" />
-              ))
-            )}
-          </div>
-        </section>
+                <button
+                  onClick={() => updateDisplayCount(displayCount + 1)}
+                  className="rounded-2xl bg-white/20 px-8 py-4 text-4xl font-black hover:bg-white/30"
+                >
+                  +
+                </button>
+              </div>
+            </section>
 
-        <section>
-          <h2 className="mb-5 text-3xl font-black text-red-300">
-            已拒絕 / 已停止
-          </h2>
+            <MessageList
+              title="新留言"
+              emptyText="目前沒有新的待審核留言"
+              data={pending}
+              mode="pending"
+            />
+          </>
+        )}
 
-          <div className="grid gap-6">
-            {rejected.length === 0 ? (
-              <p className="text-white/50">目前沒有拒絕留言</p>
-            ) : (
-              rejected.map((msg) => (
-                <MessageCard key={msg.id} msg={msg} mode="rejected" />
-              ))
-            )}
-          </div>
-        </section>
+        {activeTab === 'playing' && (
+          <MessageList
+            title="正在顯示 / 播放中的留言"
+            emptyText="目前沒有正在播放的留言"
+            data={playing}
+            mode="playing"
+          />
+        )}
+
+        {activeTab === 'completed' && (
+          <MessageList
+            title="已跑完的留言"
+            emptyText="目前沒有已完成播放的留言"
+            data={completed}
+            mode="completed"
+          />
+        )}
+
+        {activeTab === 'rejected' && (
+          <MessageList
+            title="已拒絕 / 已停止"
+            emptyText="目前沒有拒絕或停止的留言"
+            data={rejected}
+            mode="rejected"
+          />
+        )}
       </div>
     </main>
   )
