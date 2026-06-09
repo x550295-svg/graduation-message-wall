@@ -16,10 +16,37 @@ type Message = {
 
 type Tab = 'home' | 'pending' | 'playing' | 'completed' | 'rejected'
 
+const ADMIN_PASSWORD = '89177521'
+
 export default function AdminPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [displayCount, setDisplayCount] = useState(3)
   const [activeTab, setActiveTab] = useState<Tab>('home')
+
+  const [password, setPassword] = useState('')
+  const [isLoggedIn, setIsLoggedIn] = useState(false)
+
+  useEffect(() => {
+    const savedLogin = localStorage.getItem('admin_logged_in')
+    if (savedLogin === 'true') {
+      setIsLoggedIn(true)
+    }
+  }, [])
+
+  function loginAdmin() {
+    if (password === ADMIN_PASSWORD) {
+      localStorage.setItem('admin_logged_in', 'true')
+      setIsLoggedIn(true)
+      setPassword('')
+    } else {
+      alert('密碼錯誤')
+    }
+  }
+
+  function logoutAdmin() {
+    localStorage.removeItem('admin_logged_in')
+    setIsLoggedIn(false)
+  }
 
   async function loadData() {
     const { data: messageData, error: messageError } = await supabase
@@ -171,11 +198,13 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
+    if (!isLoggedIn) return
+
     loadData()
 
     const timer = setInterval(loadData, 2000)
     return () => clearInterval(timer)
-  }, [])
+  }, [isLoggedIn])
 
   const pending = messages.filter((m) => m.status === 'pending')
 
@@ -344,6 +373,40 @@ export default function AdminPage() {
     )
   }
 
+  if (!isLoggedIn) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-slate-950 p-6 text-white">
+        <div className="w-full max-w-md rounded-[32px] border border-cyan-300/30 bg-white/10 p-8 shadow-[0_0_40px_rgba(34,211,238,0.25)]">
+          <p className="mb-2 text-center font-bold text-cyan-300">
+            Graduation Message Wall
+          </p>
+
+          <h1 className="mb-6 text-center text-4xl font-black">
+            管理後台登入
+          </h1>
+
+          <input
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') loginAdmin()
+            }}
+            placeholder="請輸入管理密碼"
+            className="mb-5 w-full rounded-2xl bg-white px-5 py-4 text-center text-xl font-bold text-black outline-none"
+          />
+
+          <button
+            onClick={loginAdmin}
+            className="w-full rounded-2xl bg-cyan-400 py-4 text-xl font-black text-slate-950 hover:bg-cyan-300"
+          >
+            進入後台
+          </button>
+        </div>
+      </main>
+    )
+  }
+
   return (
     <main className="min-h-screen bg-slate-950 p-8 text-white">
       <div className="mx-auto max-w-7xl">
@@ -362,12 +425,21 @@ export default function AdminPage() {
             </p>
           </div>
 
-          <button
-            onClick={clearAllMessages}
-            className="rounded-3xl bg-red-700 px-8 py-4 text-xl font-black text-white hover:bg-red-600"
-          >
-            🗑 清空全部留言
-          </button>
+          <div className="flex gap-3">
+            <button
+              onClick={clearAllMessages}
+              className="rounded-3xl bg-red-700 px-8 py-4 text-xl font-black text-white hover:bg-red-600"
+            >
+              🗑 清空全部留言
+            </button>
+
+            <button
+              onClick={logoutAdmin}
+              className="rounded-3xl bg-white/10 px-8 py-4 text-xl font-black text-white hover:bg-white/20"
+            >
+              登出
+            </button>
+          </div>
         </div>
 
         <nav className="sticky top-0 z-20 mb-8 flex flex-wrap gap-3 bg-slate-950/95 py-4 backdrop-blur">
